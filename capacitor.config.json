@@ -1,0 +1,9 @@
+{
+  "appId": "com.confereai.app",
+  "appName": "Confere Aí",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  }
+}
