@@ -266,6 +266,37 @@
     font-family:'JetBrains Mono',monospace;
     margin-bottom:12px;
   }
+
+  .debug-toggle{
+    display:block;
+    text-align:center;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    background:none;
+    border:none;
+    cursor:pointer;
+    text-decoration:underline;
+    text-underline-offset:2px;
+    padding:4px;
+    margin:2px auto 12px;
+    font-family:inherit;
+  }
+  .debug-panel{
+    display:none;
+    background:#F1EFE8;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:10px 12px;
+    margin-bottom:12px;
+    font-size:0.7rem;
+    font-family:'JetBrains Mono',monospace;
+    color:var(--ink-soft);
+    white-space:pre-wrap;
+    word-break:break-word;
+    max-height:180px;
+    overflow-y:auto;
+  }
+  .debug-panel b{color:var(--ink);}
   .field{margin-bottom:12px;}
   .field label{
     display:block;
@@ -506,6 +537,9 @@
       <span id="dupNoticeText"></span>
     </div>
 
+    <button class="debug-toggle" id="btnToggleDebug" type="button">ver texto lido (diagnóstico)</button>
+    <div class="debug-panel" id="debugPanel"></div>
+
     <div class="btn-row">
       <button id="btnCancel" type="button">Cancelar</button>
       <button id="btnAdd" type="button">Adicionar</button>
@@ -580,12 +614,13 @@
   }
 
   // ---------- OCR text parsing ----------
-  var CURRENCY_RE = /(\d{1,3}(?:\.\d{3})*,\d{2})|(\d+\.\d{2})|(\d+,\d{2})/;
+  // Tolerante a espaço perdido perto da vírgula/ponto, comum em fontes de etiqueta térmica (ex: "26, 63")
+  var CURRENCY_RE = /(\d{1,3}(?:\.\d{3})*\s?,\s?\d{2})(?![A-Za-z])|(\d+\.\d{2})(?![A-Za-z])|(\d+\s?,\s?\d{2})(?![A-Za-z])/;
 
   function firstCurrencyIn(str){
     var m = str.match(CURRENCY_RE);
     if(!m) return null;
-    var raw = m[0];
+    var raw = m[0].replace(/\s+/g, "");
     var normalized = raw.indexOf(",") !== -1 ? raw.replace(/\./g,"").replace(",", ".") : raw;
     var num = parseFloat(normalized);
     return (!isNaN(num) && num > 0 && num < 100000) ? num : null;
@@ -626,7 +661,7 @@
   }
 
   function normalizeWeight(num, unit){
-    num = num.replace(",", ".").replace(/\.0+$/,"");
+    num = num.replace(/\s+/g, "").replace(",", ".").replace(/\.0+$/,"");
     unit = unit.toLowerCase();
     if(unit === "und" || unit === "unid" || unit === "unidades") unit = "un";
     return num + unit;
@@ -634,7 +669,7 @@
 
   function extractWeight(text){
     var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
-    var weightRe = /(\d+(?:[.,]\d+)?)\s?(kg|g|ml|l|un|und|unid|unidades)\b/i;
+    var weightRe = /(\d+(?:[.,]\s?\d+)?)\s?(kg|g|ml|l|un|und|unid|unidades)\b/i;
 
     // Priority 1: linha "PESO" (peso líquido do produto), nunca "TARA" (peso da embalagem)
     // nem "R$/kg" (que é preço, não peso)
@@ -756,7 +791,7 @@
 
     stopStream();
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      video: { facingMode: { ideal: facingMode }, width: { ideal: 1920 }, height: { ideal: 1440 } },
       audio: false
     }).then(function(s){
       stream = s;
@@ -852,7 +887,8 @@
       openConfirm(name, price, weight, {
         manual: false,
         barcode: barcode,
-        priceFromBarcode: scaleInfo.isScale && scaleInfo.price !== null
+        priceFromBarcode: scaleInfo.isScale && scaleInfo.price !== null,
+        rawText: text
       });
     });
   }
@@ -868,7 +904,14 @@
   var dupNoticeText = document.getElementById("dupNoticeText");
   var barcodeBadge = document.getElementById("barcodeBadge");
   var barcodeBadgeText = document.getElementById("barcodeBadgeText");
+  var debugPanel = document.getElementById("debugPanel");
+  var btnToggleDebug = document.getElementById("btnToggleDebug");
   var pendingBarcode = null;
+  var pendingRawText = "";
+
+  btnToggleDebug.addEventListener("click", function(){
+    debugPanel.style.display = (debugPanel.style.display === "block") ? "none" : "block";
+  });
 
   function checkDuplicateLive(){
     var idx = findMatchIndex(nameInput.value, pendingBarcode);
@@ -884,6 +927,7 @@
   function openConfirm(name, price, weight, opts){
     opts = opts || {};
     pendingBarcode = opts.barcode || null;
+    pendingRawText = opts.rawText || "";
     confirmTitle.textContent = opts.manual ? "Adicionar produto manualmente" : "Confirme os dados lidos";
 
     if(pendingBarcode){
@@ -894,6 +938,11 @@
     } else {
       barcodeBadge.style.display = "none";
     }
+
+    debugPanel.style.display = "none";
+    debugPanel.innerHTML =
+      "<b>código de barras:</b> " + (pendingBarcode ? escapeHtml(pendingBarcode) : "(nenhum encontrado)") +
+      "\n\n<b>texto lido (OCR):</b>\n" + (pendingRawText ? escapeHtml(pendingRawText) : "(vazio)");
 
     nameInput.value = name || "";
     priceInput.value = (price !== null && price !== undefined) ? price.toFixed(2) : "";
