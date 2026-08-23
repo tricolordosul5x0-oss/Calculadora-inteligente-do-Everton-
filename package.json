@@ -1,0 +1,16 @@
+{
+  "name": "confere-ai",
+  "version": "1.0.0",
+  "description": "Calculadora de compras com leitura de etiqueta por câmera",
+  "private": true,
+  "scripts": {
+    "android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}
