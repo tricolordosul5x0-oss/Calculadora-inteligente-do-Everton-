@@ -217,6 +217,35 @@
     cursor:pointer;
   }
 
+  #blurWarning{
+    display:none;
+    margin-top:10px;
+    background:#FBF1E4;
+    border:1px solid #E9CFA0;
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:0.78rem;
+    color:var(--amber);
+    line-height:1.4;
+  }
+  .blur-warning-buttons{
+    display:flex;
+    gap:8px;
+    margin-top:9px;
+  }
+  .blur-warning-buttons button{
+    flex:1;
+    border:none;
+    border-radius:8px;
+    padding:9px;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+    font-size:0.76rem;
+    cursor:pointer;
+  }
+  #btnRetakeBlur{background:#fff;color:var(--ink);border:1px solid #E9CFA0 !important;}
+  #btnUseAnyway{background:var(--amber);color:#fff;}
+
   #ocrStatus{
     margin-top:12px;
     display:none;
@@ -504,6 +533,13 @@
       <img id="previewImg" alt="Foto da etiqueta">
       <button id="btnRetake" type="button">tirar outra</button>
     </div>
+    <div id="blurWarning">
+      <span>📷 essa foto pode ter saído desfocada — a leitura tende a falhar</span>
+      <div class="blur-warning-buttons">
+        <button id="btnRetakeBlur" type="button">tirar outra</button>
+        <button id="btnUseAnyway" type="button">usar assim mesmo</button>
+      </div>
+    </div>
     <div id="ocrStatus"><div class="spinner"></div><span id="ocrStatusText">lendo a etiqueta…</span></div>
   </div>
 
@@ -579,6 +615,38 @@
   var lastCanvas = null;
 
   // ---------- helpers ----------
+  // ---------- nitidez da foto ----------
+  // Estimativa simples de nitidez (variância de diferenças entre pixels vizinhos,
+  // numa versão pequena e em tons de cinza da imagem). Fotos borradas têm bordas
+  // "suaves" -> variância baixa. Fotos nítidas têm transições bruscas -> variância alta.
+  function estimateSharpness(canvas){
+    var w = 200;
+    var h = Math.round(canvas.height * (w / canvas.width));
+    var small = document.createElement("canvas");
+    small.width = w; small.height = h;
+    var sctx = small.getContext("2d");
+    sctx.drawImage(canvas, 0, 0, w, h);
+    var data = sctx.getImageData(0, 0, w, h).data;
+
+    var gray = new Float32Array(w * h);
+    for(var i=0, p=0; i<data.length; i+=4, p++){
+      gray[p] = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+    }
+
+    var sum = 0, sumSq = 0, count = 0;
+    for(var y=1; y<h-1; y++){
+      for(var x=1; x<w-1; x++){
+        var idx = y*w + x;
+        var lap = (gray[idx-1] + gray[idx+1] + gray[idx-w] + gray[idx+w]) - 4*gray[idx];
+        sum += lap;
+        sumSq += lap*lap;
+        count++;
+      }
+    }
+    var mean = sum / count;
+    return (sumSq / count) - (mean*mean); // variância do "laplaciano"
+  }
+
   function normalize(str){
     return (str || "")
       .toString()
@@ -791,7 +859,11 @@
 
     stopStream();
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: facingMode }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+      video: {
+        facingMode: { ideal: facingMode },
+        width: { ideal: 1920 }, height: { ideal: 1440 },
+        advanced: [{ focusMode: "continuous" }]
+      },
       audio: false
     }).then(function(s){
       stream = s;
@@ -799,6 +871,15 @@
       cameraStage.style.display = "block";
       cameraControls.style.display = "flex";
       btnStartCamera.style.display = "none";
+
+      // Dá um tempinho pro foco automático travar antes de liberar a captura
+      // (fotografar de perto, na hora que a câmera abre, costuma sair borrado)
+      btnShutter.disabled = true;
+      btnShutter.textContent = "◎ focando…";
+      setTimeout(function(){
+        btnShutter.disabled = false;
+        btnShutter.textContent = "◎ Capturar foto";
+      }, 900);
     }).catch(function(err){
       console.error(err);
       if(err && err.name === "NotAllowedError"){
@@ -826,6 +907,9 @@
     openCamera();
   });
 
+  var BLUR_THRESHOLD = 800;
+  var blurWarning = document.getElementById("blurWarning");
+
   btnShutter.addEventListener("click", function(){
     var w = cameraVideo.videoWidth;
     var h = cameraVideo.videoHeight;
@@ -839,14 +923,34 @@
 
     previewImg.src = canvas.toDataURL("image/jpeg", 0.92);
     preview.style.display = "block";
-
     closeCamera();
-    readLabel(canvas);
+
+    var sharpness = estimateSharpness(canvas);
+    if(sharpness < BLUR_THRESHOLD){
+      blurWarning.style.display = "block";
+    } else {
+      blurWarning.style.display = "none";
+      readLabel(canvas);
+    }
+  });
+
+  document.getElementById("btnRetakeBlur").addEventListener("click", function(){
+    blurWarning.style.display = "none";
+    preview.style.display = "none";
+    confirmCard.style.display = "none";
+    pendingBarcode = null;
+    openCamera();
+  });
+
+  document.getElementById("btnUseAnyway").addEventListener("click", function(){
+    blurWarning.style.display = "none";
+    readLabel(lastCanvas);
   });
 
   btnRetake.addEventListener("click", function(){
     preview.style.display = "none";
     confirmCard.style.display = "none";
+    blurWarning.style.display = "none";
     pendingBarcode = null;
     openCamera();
   });
@@ -939,10 +1043,14 @@
       barcodeBadge.style.display = "none";
     }
 
-    debugPanel.style.display = "none";
     debugPanel.innerHTML =
       "<b>código de barras:</b> " + (pendingBarcode ? escapeHtml(pendingBarcode) : "(nenhum encontrado)") +
       "\n\n<b>texto lido (OCR):</b>\n" + (pendingRawText ? escapeHtml(pendingRawText) : "(vazio)");
+
+    // Se a leitura claramente falhou (sem preço, ou nome genérico), já abre o
+    // diagnóstico sozinho — evita o usuário ter que lembrar de tocar no link.
+    var looksUnreliable = !opts.manual && (price === null || price === undefined || name === "Produto");
+    debugPanel.style.display = looksUnreliable ? "block" : "none";
 
     nameInput.value = name || "";
     priceInput.value = (price !== null && price !== undefined) ? price.toFixed(2) : "";
@@ -961,6 +1069,7 @@
   document.getElementById("btnCancel").addEventListener("click", function(){
     closeConfirm();
     preview.style.display = "none";
+    blurWarning.style.display = "none";
     pendingBarcode = null;
   });
 
@@ -995,6 +1104,7 @@
   document.getElementById("btnManual").addEventListener("click", function(){
     closeCamera();
     preview.style.display = "none";
+    blurWarning.style.display = "none";
     pendingBarcode = null;
     openConfirm("", null, "", {manual:true});
   });
