@@ -1,6 +1,6 @@
 {
-  "name": "Confere Aí — calculadora de compras",
-  "short_name": "Confere Aí",
+  "name": "Everton Calculadora Inteligente",
+  "short_name": "Everton",
   "description": "Fotografe a etiqueta dos produtos no mercado e some o total da compra automaticamente.",
   "start_url": "./index.html",
   "scope": "./",
