@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Confere aí — calculadora de compras</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2E6A45">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Confere Aí">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F4EE;
+    --card:#FFFFFF;
+    --ink:#1E1C18;
+    --ink-soft:#6B675E;
+    --line:#DAD5C8;
+    --green:#2E6A45;
+    --green-dark:#1F4C32;
+    --amber:#C17A2E;
+    --red:#B5432E;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:24px 14px 60px;
+  }
+  .app{width:100%;max-width:460px;}
+
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:18px;
+    padding:0 2px;
+  }
+  header h1{
+    font-family:'JetBrains Mono',monospace;
+    font-weight:800;
+    font-size:1.3rem;
+    letter-spacing:-0.02em;
+    margin:0;
+  }
+  header h1 span{color:var(--green);}
+  header p{
+    margin:0;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+  }
+
+  /* ---------- camera card ---------- */
+  .capture-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:18px;
+    margin-bottom:16px;
+    box-shadow:0 1px 0 rgba(0,0,0,0.02);
+  }
+
+  #cameraStage{
+    position:relative;
+    width:100%;
+    aspect-ratio:4/3;
+    background:#0C0C0B;
+    border-radius:12px;
+    overflow:hidden;
+    display:none;
+  }
+  #cameraVideo{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  #cameraGuide{
+    position:absolute;
+    left:8%; right:8%; top:32%; bottom:32%;
+    border:2px dashed rgba(255,255,255,0.65);
+    border-radius:10px;
+    pointer-events:none;
+  }
+  #cameraHint{
+    position:absolute;
+    bottom:8px; left:0; right:0;
+    text-align:center;
+    color:#fff;
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.68rem;
+    text-shadow:0 1px 3px rgba(0,0,0,0.6);
+    letter-spacing:0.02em;
+  }
+
+  #btnStartCamera{
+    width:100%;
+    background:var(--green);
+    color:#fff;
+    border:none;
+    border-radius:12px;
+    padding:16px;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+    font-size:1rem;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    cursor:pointer;
+    transition:background .15s ease, transform .1s ease;
+  }
+  #btnStartCamera:active{transform:scale(0.98);}
+  #btnStartCamera:hover{background:var(--green-dark);}
+  #btnStartCamera svg{width:20px;height:20px;flex-shrink:0;}
+
+  .camera-controls{
+    display:none;
+    gap:10px;
+    margin-top:12px;
+  }
+  .camera-controls button{
+    border:none;
+    border-radius:12px;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+    cursor:pointer;
+    padding:14px;
+  }
+  #btnShutter{
+    flex:1;
+    background:var(--ink);
+    color:#fff;
+    font-size:0.95rem;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+  #btnShutter:hover{background:#000;}
+  #btnSwitchCamera{
+    width:52px;
+    background:var(--paper);
+    color:var(--ink);
+    border:1px solid var(--line) !important;
+    font-size:1.1rem;
+  }
+  #btnCloseCamera{
+    width:52px;
+    background:var(--paper);
+    color:var(--red);
+    border:1px solid var(--line) !important;
+    font-size:0.95rem;
+  }
+
+  .manual-link{
+    display:block;
+    text-align:center;
+    margin-top:10px;
+    font-size:0.78rem;
+    color:var(--ink-soft);
+    background:none;
+    border:none;
+    cursor:pointer;
+    text-decoration:underline;
+    text-underline-offset:2px;
+    padding:6px;
+    width:100%;
+    font-family:inherit;
+  }
+
+  #cameraError{
+    display:none;
+    margin-top:12px;
+    background:#FBEAE6;
+    border:1px solid #E9B6AA;
+    color:var(--red);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:0.8rem;
+    line-height:1.4;
+  }
+
+  #preview{
+    margin-top:14px;
+    display:none;
+    border-radius:10px;
+    overflow:hidden;
+    border:1px solid var(--line);
+    position:relative;
+  }
+  #preview img{width:100%;display:block;max-height:220px;object-fit:cover;}
+  #btnRetake{
+    position:absolute;
+    top:8px; right:8px;
+    background:rgba(0,0,0,0.55);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    padding:7px 11px;
+    font-size:0.72rem;
+    font-family:'JetBrains Mono',monospace;
+    cursor:pointer;
+  }
+
+  #ocrStatus{
+    margin-top:12px;
+    display:none;
+    align-items:center;
+    gap:10px;
+    font-size:0.85rem;
+    color:var(--ink-soft);
+    font-family:'JetBrains Mono',monospace;
+  }
+  .spinner{
+    width:16px;height:16px;
+    border:2px solid var(--line);
+    border-top-color:var(--green);
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+    flex-shrink:0;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ---------- confirm card ---------- */
+  .confirm-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:18px;
+    margin-bottom:16px;
+    display:none;
+    animation:rise .18s ease;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  .confirm-card h3{
+    margin:0 0 14px;
+    font-size:0.95rem;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+  }
+  .field{margin-bottom:12px;}
+  .field label{
+    display:block;
+    font-size:0.7rem;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+    font-weight:600;
+  }
+  .field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:11px 12px;
+    font-size:0.98rem;
+    font-family:'Inter',sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .field input:focus{outline:2px solid var(--green);outline-offset:1px;}
+  .field.price input, .field.qty input, .field.weight input{
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+  }
+  .row-2{display:flex;gap:10px;}
+  .row-2 .field{flex:1;}
+
+  .dup-notice{
+    background:#FBF1E4;
+    border:1px solid #E9CFA0;
+    color:var(--amber);
+    border-radius:9px;
+    padding:10px 12px;
+    font-size:0.8rem;
+    margin-bottom:12px;
+    display:none;
+    line-height:1.4;
+  }
+  .dup-notice strong{display:block;font-size:0.82rem;margin-bottom:2px;}
+
+  .btn-row{display:flex;gap:10px;margin-top:4px;}
+  .btn-row button{
+    flex:1;
+    border-radius:10px;
+    padding:12px;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+    font-size:0.88rem;
+    border:none;
+    cursor:pointer;
+  }
+  #btnAdd{background:var(--ink);color:#fff;}
+  #btnAdd:hover{background:#000;}
+  #btnCancel{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  #btnCancel:hover{background:var(--paper);}
+
+  /* ---------- receipt list ---------- */
+  .receipt{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:20px 18px 4px;
+    position:relative;
+  }
+  .receipt-title{
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--ink-soft);
+    margin-bottom:12px;
+    display:flex;
+    justify-content:space-between;
+  }
+  .empty-state{
+    text-align:center;
+    padding:30px 10px 24px;
+    color:var(--ink-soft);
+    font-size:0.85rem;
+    line-height:1.5;
+  }
+  .empty-state .icon{font-size:1.6rem;display:block;margin-bottom:8px;}
+
+  #itemsList{list-style:none;margin:0;padding:0;}
+  .item{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:11px 0;
+    border-bottom:1px dashed var(--line);
+    gap:10px;
+  }
+  .item:last-child{border-bottom:none;}
+  .item-info{min-width:0;flex:1;}
+  .item-name{
+    font-size:0.9rem;
+    font-weight:600;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .item-meta{
+    font-size:0.74rem;
+    color:var(--ink-soft);
+    font-family:'JetBrains Mono',monospace;
+    margin-top:2px;
+  }
+  .item-right{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-shrink:0;
+  }
+  .item-subtotal{
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+    font-size:0.92rem;
+    white-space:nowrap;
+  }
+  .item-remove{
+    background:none;
+    border:none;
+    color:var(--ink-soft);
+    cursor:pointer;
+    font-size:1rem;
+    line-height:1;
+    padding:4px;
+  }
+  .item-remove:hover{color:var(--red);}
+
+  .barcode{
+    height:26px;
+    margin:16px -18px 0;
+    background:repeating-linear-gradient(90deg,var(--ink) 0 2px,transparent 2px 5px,var(--ink) 5px 6px,transparent 6px 11px,var(--ink) 11px 14px,transparent 14px 16px);
+    opacity:0.85;
+  }
+
+  .total-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    padding:16px 18px 18px;
+    margin:0 -18px;
+    background:var(--ink);
+    border-radius:0 0 16px 16px;
+  }
+  .total-row .label{
+    color:#fff;
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.78rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    opacity:0.75;
+  }
+  .total-row .value{
+    color:#fff;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:800;
+    font-size:1.5rem;
+  }
+  .item-count{
+    text-align:center;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    margin-top:10px;
+    font-family:'JetBrains Mono',monospace;
+  }
+
+  input[type="file"]{display:none;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>confere<span>aí</span></h1>
+    <p>soma no carrinho</p>
+  </header>
+
+  <div class="capture-card">
+
+    <div id="cameraStage">
+      <video id="cameraVideo" autoplay playsinline muted></video>
+      <div id="cameraGuide"></div>
+      <div id="cameraHint">encaixe a etiqueta de preço no quadro</div>
+    </div>
+
+    <button id="btnStartCamera" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+      Abrir câmera
+    </button>
+
+    <div class="camera-controls" id="cameraControls">
+      <button id="btnCloseCamera" type="button" title="Fechar câmera">✕</button>
+      <button id="btnShutter" type="button">◎ Capturar foto</button>
+      <button id="btnSwitchCamera" type="button" title="Trocar câmera">⟳</button>
+    </div>
+
+    <div id="cameraError"></div>
+
+    <button class="manual-link" id="btnManual" type="button">ou digitar manualmente</button>
+
+    <div id="preview">
+      <img id="previewImg" alt="Foto da etiqueta">
+      <button id="btnRetake" type="button">tirar outra</button>
+    </div>
+    <div id="ocrStatus"><div class="spinner"></div><span id="ocrStatusText">lendo a etiqueta…</span></div>
+  </div>
+
+  <div class="confirm-card" id="confirmCard">
+    <h3 id="confirmTitle">Confirme os dados</h3>
+
+    <div class="field">
+      <label for="productName">Produto</label>
+      <input type="text" id="productName" placeholder="Nome do produto">
+    </div>
+
+    <div class="row-2">
+      <div class="field price">
+        <label for="productPrice">Preço (R$)</label>
+        <input type="number" id="productPrice" placeholder="0,00" step="0.01" min="0" inputmode="decimal">
+      </div>
+      <div class="field weight">
+        <label for="productWeight">Peso / embalagem</label>
+        <input type="text" id="productWeight" placeholder="ex: 500g">
+      </div>
+    </div>
+
+    <div class="field qty">
+      <label for="productQty">Quantidade (unidades iguais a essa)</label>
+      <input type="number" id="productQty" value="1" min="1" step="1" inputmode="numeric">
+    </div>
+
+    <div class="dup-notice" id="dupNotice">
+      <strong>Esse produto já está na lista</strong>
+      <span id="dupNoticeText"></span>
+    </div>
+
+    <div class="btn-row">
+      <button id="btnCancel" type="button">Cancelar</button>
+      <button id="btnAdd" type="button">Adicionar</button>
+    </div>
+  </div>
+
+  <div class="receipt">
+    <div class="receipt-title"><span>Itens</span><span id="itemCountTop"></span></div>
+
+    <div class="empty-state" id="emptyState">
+      <span class="icon">🛒</span>
+      Abra a câmera e fotografe a primeira<br>etiqueta pra começar a soma.
+    </div>
+
+    <ul id="itemsList"></ul>
+
+    <div class="barcode" id="barcode" style="display:none;"></div>
+    <div class="total-row" id="totalRow" style="display:none;">
+      <span class="label">Total</span>
+      <span class="value" id="totalValue">R$ 0,00</span>
+    </div>
+  </div>
+  <div class="item-count" id="itemCountBottom"></div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------- state ----------
+  var items = []; // { id, name, price, weight, qty }
+  var stream = null;
+  var facingMode = "environment";
+  var lastCanvas = null;
+
+  // ---------- helpers ----------
+  function normalize(str){
+    return (str || "")
+      .toString()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g," ")
+      .replace(/\s+/g," ")
+      .trim();
+  }
+
+  function formatBRL(value){
+    return "R$ " + value.toFixed(2).replace(".", ",");
+  }
+
+  function findMatchIndex(name){
+    var n = normalize(name);
+    if(!n) return -1;
+    for(var i=0;i<items.length;i++){
+      var existing = normalize(items[i].name);
+      if(existing === n || existing.indexOf(n) !== -1 || n.indexOf(existing) !== -1){
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // ---------- OCR text parsing ----------
+  function extractPrice(text){
+    var candidates = [];
+    var re = /(\d{1,3}(?:\.\d{3})*,\d{2})|(\d+\.\d{2})|(\d+,\d{2})/g;
+    var match;
+    while((match = re.exec(text)) !== null){
+      var raw = match[0];
+      var normalized = raw.indexOf(",") !== -1
+        ? raw.replace(/\./g,"").replace(",", ".")
+        : raw;
+      var num = parseFloat(normalized);
+      if(!isNaN(num) && num > 0 && num < 100000){
+        var start = Math.max(0, match.index - 4);
+        var context = text.substring(start, match.index);
+        var priority = /r\$/i.test(context) ? 0 : 1;
+        candidates.push({ value: num, priority: priority, index: match.index });
+      }
+    }
+    if(candidates.length === 0) return null;
+    candidates.sort(function(a,b){
+      if(a.priority !== b.priority) return a.priority - b.priority;
+      return a.index - b.index;
+    });
+    return candidates[0].value;
+  }
+
+  function extractWeight(text){
+    // Matches package/weight descriptors: 500g, 1kg, 350 ml, 1L, 12un, 2 unidades...
+    var re = /(\d+(?:[.,]\d+)?)\s?(kg|g|ml|l|un|und|unid|unidades)\b/gi;
+    var match;
+    var best = null;
+    while((match = re.exec(text)) !== null){
+      var num = match[1].replace(",", ".");
+      var unit = match[2].toLowerCase();
+      if(unit === "und" || unit === "unid" || unit === "unidades") unit = "un";
+      var candidate = num.replace(/\.0+$/,"") + unit;
+      if(!best){ best = candidate; }
+    }
+    return best;
+  }
+
+  function extractName(text){
+    var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
+    var best = "";
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      var letters = (line.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+      var digits = (line.match(/[0-9]/g) || []).length;
+      if(letters < 3) continue;
+      if(letters <= digits) continue;
+      if(/^r\$/i.test(line)) continue;
+      if(line.length > best.length){
+        best = line;
+      }
+    }
+    if(!best) return "Produto";
+    if(best.length > 40) best = best.substring(0,40).trim();
+    return best;
+  }
+
+  // ---------- camera ----------
+  var cameraStage = document.getElementById("cameraStage");
+  var cameraVideo = document.getElementById("cameraVideo");
+  var cameraControls = document.getElementById("cameraControls");
+  var cameraError = document.getElementById("cameraError");
+  var btnStartCamera = document.getElementById("btnStartCamera");
+  var btnShutter = document.getElementById("btnShutter");
+  var btnSwitchCamera = document.getElementById("btnSwitchCamera");
+  var btnCloseCamera = document.getElementById("btnCloseCamera");
+  var preview = document.getElementById("preview");
+  var previewImg = document.getElementById("previewImg");
+  var btnRetake = document.getElementById("btnRetake");
+  var ocrStatus = document.getElementById("ocrStatus");
+  var ocrStatusText = document.getElementById("ocrStatusText");
+
+  function showCameraError(msg){
+    cameraError.textContent = msg;
+    cameraError.style.display = "block";
+  }
+  function hideCameraError(){ cameraError.style.display = "none"; }
+
+  function stopStream(){
+    if(stream){
+      stream.getTracks().forEach(function(t){ t.stop(); });
+      stream = null;
+    }
+  }
+
+  function openCamera(){
+    hideCameraError();
+    preview.style.display = "none";
+    confirmCard.style.display = "none";
+
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showCameraError("Este navegador não permite abrir a câmera aqui. Use o app instalado (APK) ou atualize o navegador.");
+      return;
+    }
+
+    stopStream();
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    }).then(function(s){
+      stream = s;
+      cameraVideo.srcObject = s;
+      cameraStage.style.display = "block";
+      cameraControls.style.display = "flex";
+      btnStartCamera.style.display = "none";
+    }).catch(function(err){
+      console.error(err);
+      if(err && err.name === "NotAllowedError"){
+        showCameraError("Permissão de câmera negada. Habilite o acesso à câmera nas configurações do app/navegador e tente de novo.");
+      } else if(err && err.name === "NotFoundError"){
+        showCameraError("Nenhuma câmera foi encontrada neste dispositivo.");
+      } else {
+        showCameraError("Não consegui abrir a câmera. Tente novamente ou digite manualmente.");
+      }
+    });
+  }
+
+  function closeCamera(){
+    stopStream();
+    cameraStage.style.display = "none";
+    cameraControls.style.display = "none";
+    btnStartCamera.style.display = "flex";
+  }
+
+  btnStartCamera.addEventListener("click", openCamera);
+  btnCloseCamera.addEventListener("click", closeCamera);
+
+  btnSwitchCamera.addEventListener("click", function(){
+    facingMode = (facingMode === "environment") ? "user" : "environment";
+    openCamera();
+  });
+
+  btnShutter.addEventListener("click", function(){
+    var w = cameraVideo.videoWidth;
+    var h = cameraVideo.videoHeight;
+    if(!w || !h) return;
+    var canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(cameraVideo, 0, 0, w, h);
+    lastCanvas = canvas;
+
+    previewImg.src = canvas.toDataURL("image/jpeg", 0.92);
+    preview.style.display = "block";
+
+    closeCamera();
+    runOcr(canvas);
+  });
+
+  btnRetake.addEventListener("click", function(){
+    preview.style.display = "none";
+    confirmCard.style.display = "none";
+    openCamera();
+  });
+
+  // ---------- OCR run ----------
+  function runOcr(source){
+    ocrStatus.style.display = "flex";
+    ocrStatusText.textContent = "lendo a etiqueta…";
+
+    Tesseract.recognize(source, "por", {
+      logger: function(m){
+        if(m.status === "recognizing text" && typeof m.progress === "number"){
+          ocrStatusText.textContent = "lendo a etiqueta… " + Math.round(m.progress*100) + "%";
+        }
+      }
+    }).then(function(result){
+      var text = (result && result.data && result.data.text) || "";
+      var price = extractPrice(text);
+      var name = extractName(text);
+      var weight = extractWeight(text);
+      ocrStatus.style.display = "none";
+      openConfirm(name, price, weight, {manual:false});
+    }).catch(function(err){
+      console.error(err);
+      ocrStatusText.textContent = "não consegui ler — digite manualmente.";
+      setTimeout(function(){
+        ocrStatus.style.display = "none";
+        openConfirm("", null, "", {manual:true});
+      }, 900);
+    });
+  }
+
+  // ---------- confirm card ----------
+  var confirmCard = document.getElementById("confirmCard");
+  var confirmTitle = document.getElementById("confirmTitle");
+  var nameInput = document.getElementById("productName");
+  var priceInput = document.getElementById("productPrice");
+  var weightInput = document.getElementById("productWeight");
+  var qtyInput = document.getElementById("productQty");
+  var dupNotice = document.getElementById("dupNotice");
+  var dupNoticeText = document.getElementById("dupNoticeText");
+
+  function checkDuplicateLive(){
+    var idx = findMatchIndex(nameInput.value);
+    if(idx !== -1){
+      dupNotice.style.display = "block";
+      dupNoticeText.textContent = "Já tem " + items[idx].qty + " unidade(s) na lista. Informe quantas você está adicionando agora — se não mudar, considera 1.";
+    } else {
+      dupNotice.style.display = "none";
+    }
+  }
+  nameInput.addEventListener("input", checkDuplicateLive);
+
+  function openConfirm(name, price, weight, opts){
+    opts = opts || {};
+    confirmTitle.textContent = opts.manual ? "Adicionar produto manualmente" : "Confirme os dados lidos";
+    nameInput.value = name || "";
+    priceInput.value = (price !== null && price !== undefined) ? price.toFixed(2) : "";
+    weightInput.value = weight || "";
+    qtyInput.value = 1;
+    confirmCard.style.display = "block";
+    checkDuplicateLive();
+    confirmCard.scrollIntoView({behavior:"smooth", block:"nearest"});
+    if(opts.manual){ nameInput.focus(); } else { priceInput.focus(); priceInput.select(); }
+  }
+
+  function closeConfirm(){
+    confirmCard.style.display = "none";
+  }
+
+  document.getElementById("btnCancel").addEventListener("click", function(){
+    closeConfirm();
+    preview.style.display = "none";
+  });
+
+  document.getElementById("btnAdd").addEventListener("click", function(){
+    var name = nameInput.value.trim() || "Produto";
+    var price = parseFloat(priceInput.value);
+    var weight = weightInput.value.trim();
+    var qty = parseInt(qtyInput.value, 10);
+    if(isNaN(price) || price < 0){
+      priceInput.focus();
+      priceInput.style.outline = "2px solid #B5432E";
+      setTimeout(function(){ priceInput.style.outline = ""; }, 1200);
+      return;
+    }
+    if(isNaN(qty) || qty < 1) qty = 1;
+
+    var matchIdx = findMatchIndex(name);
+    if(matchIdx !== -1){
+      items[matchIdx].qty += qty;
+      items[matchIdx].price = price;
+      if(weight) items[matchIdx].weight = weight;
+    } else {
+      items.push({ id: Date.now() + Math.random(), name: name, price: price, weight: weight, qty: qty });
+    }
+    renderList();
+    closeConfirm();
+    preview.style.display = "none";
+  });
+
+  document.getElementById("btnManual").addEventListener("click", function(){
+    closeCamera();
+    preview.style.display = "none";
+    openConfirm("", null, "", {manual:true});
+  });
+
+  // ---------- render list ----------
+  var itemsList = document.getElementById("itemsList");
+  var emptyState = document.getElementById("emptyState");
+  var barcode = document.getElementById("barcode");
+  var totalRow = document.getElementById("totalRow");
+  var totalValue = document.getElementById("totalValue");
+  var itemCountTop = document.getElementById("itemCountTop");
+  var itemCountBottom = document.getElementById("itemCountBottom");
+
+  function renderList(){
+    itemsList.innerHTML = "";
+    if(items.length === 0){
+      emptyState.style.display = "block";
+      barcode.style.display = "none";
+      totalRow.style.display = "none";
+      itemCountTop.textContent = "";
+      itemCountBottom.textContent = "";
+      return;
+    }
+    emptyState.style.display = "none";
+    barcode.style.display = "block";
+    totalRow.style.display = "flex";
+
+    var total = 0;
+    var totalUnits = 0;
+
+    items.forEach(function(item, idx){
+      var subtotal = item.price * item.qty;
+      total += subtotal;
+      totalUnits += item.qty;
+
+      var metaParts = [formatBRL(item.price) + ' × ' + item.qty];
+      if(item.weight) metaParts.push(item.weight);
+      var meta = metaParts.join(' · ');
+
+      var li = document.createElement("li");
+      li.className = "item";
+      li.innerHTML =
+        '<div class="item-info">' +
+          '<div class="item-name">' + escapeHtml(item.name) + '</div>' +
+          '<div class="item-meta">' + escapeHtml(meta) + '</div>' +
+        '</div>' +
+        '<div class="item-right">' +
+          '<div class="item-subtotal">' + formatBRL(subtotal) + '</div>' +
+          '<button class="item-remove" title="Remover" data-idx="' + idx + '">✕</button>' +
+        '</div>';
+      itemsList.appendChild(li);
+    });
+
+    itemsList.querySelectorAll(".item-remove").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        items.splice(idx, 1);
+        renderList();
+      });
+    });
+
+    totalValue.textContent = formatBRL(total);
+    itemCountTop.textContent = items.length + " produto" + (items.length !== 1 ? "s" : "");
+    itemCountBottom.textContent = totalUnits + " unidade" + (totalUnits !== 1 ? "s" : "") + " no carrinho";
+  }
+
+  function escapeHtml(str){
+    var div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  renderList();
+
+  // ---------- PWA: register service worker (harmless inside the native app too) ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+      </html>
