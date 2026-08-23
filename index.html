@@ -253,6 +253,19 @@
     font-family:'JetBrains Mono',monospace;
     font-weight:700;
   }
+  .barcode-badge{
+    display:none;
+    align-items:center;
+    gap:6px;
+    background:#EAF1EC;
+    border:1px solid #C9DECF;
+    color:var(--green-dark);
+    border-radius:9px;
+    padding:8px 11px;
+    font-size:0.74rem;
+    font-family:'JetBrains Mono',monospace;
+    margin-bottom:12px;
+  }
   .field{margin-bottom:12px;}
   .field label{
     display:block;
@@ -465,6 +478,7 @@
 
   <div class="confirm-card" id="confirmCard">
     <h3 id="confirmTitle">Confirme os dados</h3>
+    <div class="barcode-badge" id="barcodeBadge">📦 <span id="barcodeBadgeText"></span></div>
 
     <div class="field">
       <label for="productName">Produto</label>
@@ -518,6 +532,7 @@
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 (function(){
@@ -544,13 +559,21 @@
     return "R$ " + value.toFixed(2).replace(".", ",");
   }
 
-  function findMatchIndex(name){
+  function findMatchIndex(name, barcode){
+    // Prioridade 1: mesmo código de barras (ou mesmo produto de balança) já na lista
+    var key = identityKeyFor(barcode);
+    if(key){
+      for(var i=0;i<items.length;i++){
+        if(items[i].barcode && identityKeyFor(items[i].barcode) === key) return i;
+      }
+    }
+    // Prioridade 2 (reserva): nome parecido, pra quando não há código de barras
     var n = normalize(name);
     if(!n) return -1;
-    for(var i=0;i<items.length;i++){
-      var existing = normalize(items[i].name);
+    for(var j=0;j<items.length;j++){
+      var existing = normalize(items[j].name);
       if(existing === n || existing.indexOf(n) !== -1 || n.indexOf(existing) !== -1){
-        return i;
+        return j;
       }
     }
     return -1;
@@ -651,6 +674,48 @@
     return "Produto";
   }
 
+  // ---------- barcode (código de barras) ----------
+  // Etiquetas de balança no Brasil costumam usar o prefixo "2" (uso interno/GS1 Brasil).
+  // Formato mais comum: 2 + código do produto (6 dígitos) + valor (5 dígitos, em centavos) + dígito verificador.
+  // Ex.: 2 018604 026638  →  018604 = código do produto | 02663 = R$ 26,63 | 8 = dígito verificador
+  function decodeScaleBarcode(code){
+    if(!code || !/^2\d{12}$/.test(code)){
+      return { isScale: false, plu: null, price: null };
+    }
+    var plu = code.substring(1, 7);        // 6 dígitos: código interno do produto
+    var valueDigits = code.substring(7, 12); // 5 dígitos: valor em centavos
+    var price = parseInt(valueDigits, 10) / 100;
+    var plausible = !isNaN(price) && price > 0 && price < 10000;
+    return { isScale: true, plu: plu, price: plausible ? price : null };
+  }
+
+  function identityKeyFor(barcode){
+    if(!barcode) return null;
+    var info = decodeScaleBarcode(barcode);
+    // Em etiquetas de balança, o preço muda a cada pesagem, mas o código do
+    // produto (plu) continua igual — por isso comparamos só essa parte.
+    return info.isScale ? ("SCALE:" + info.plu) : ("CODE:" + barcode);
+  }
+
+  function detectBarcode(canvas){
+    return new Promise(function(resolve){
+      if(!window.ZXing){ resolve(null); return; }
+      try{
+        var reader = new ZXing.BrowserMultiFormatReader();
+        var img = new Image();
+        img.onload = function(){
+          reader.decodeFromImageElement(img)
+            .then(function(result){ resolve(result.getText()); })
+            .catch(function(){ resolve(null); });
+        };
+        img.onerror = function(){ resolve(null); };
+        img.src = canvas.toDataURL("image/png");
+      } catch(e){
+        resolve(null);
+      }
+    });
+  }
+
   // ---------- camera ----------
   var cameraStage = document.getElementById("cameraStage");
   var cameraVideo = document.getElementById("cameraVideo");
@@ -741,40 +806,54 @@
     preview.style.display = "block";
 
     closeCamera();
-    runOcr(canvas);
+    readLabel(canvas);
   });
 
   btnRetake.addEventListener("click", function(){
     preview.style.display = "none";
     confirmCard.style.display = "none";
+    pendingBarcode = null;
     openCamera();
   });
 
-  // ---------- OCR run ----------
-  function runOcr(source){
+  // ---------- OCR + barcode run (in parallel) ----------
+  function readLabel(canvas){
     ocrStatus.style.display = "flex";
     ocrStatusText.textContent = "lendo a etiqueta…";
 
-    Tesseract.recognize(source, "por", {
+    var ocrPromise = Tesseract.recognize(canvas, "por", {
       logger: function(m){
         if(m.status === "recognizing text" && typeof m.progress === "number"){
           ocrStatusText.textContent = "lendo a etiqueta… " + Math.round(m.progress*100) + "%";
         }
       }
     }).then(function(result){
-      var text = (result && result.data && result.data.text) || "";
-      var price = extractPrice(text);
-      var name = extractName(text);
-      var weight = extractWeight(text);
-      ocrStatus.style.display = "none";
-      openConfirm(name, price, weight, {manual:false});
+      return (result && result.data && result.data.text) || "";
     }).catch(function(err){
       console.error(err);
-      ocrStatusText.textContent = "não consegui ler — digite manualmente.";
-      setTimeout(function(){
-        ocrStatus.style.display = "none";
-        openConfirm("", null, "", {manual:true});
-      }, 900);
+      return "";
+    });
+
+    var barcodePromise = detectBarcode(canvas);
+
+    Promise.all([ocrPromise, barcodePromise]).then(function(results){
+      var text = results[0];
+      var barcode = results[1];
+      var ocrPrice = extractPrice(text);
+      var name = extractName(text);
+      var weight = extractWeight(text);
+
+      var scaleInfo = barcode ? decodeScaleBarcode(barcode) : { isScale:false, price:null };
+      // Se o código de barras é de balança e trouxe um preço plausível, ele é mais
+      // confiável que o OCR (não erra dígito por causa de borrão/reflexo na foto).
+      var price = (scaleInfo.isScale && scaleInfo.price !== null) ? scaleInfo.price : ocrPrice;
+
+      ocrStatus.style.display = "none";
+      openConfirm(name, price, weight, {
+        manual: false,
+        barcode: barcode,
+        priceFromBarcode: scaleInfo.isScale && scaleInfo.price !== null
+      });
     });
   }
 
@@ -787,9 +866,12 @@
   var qtyInput = document.getElementById("productQty");
   var dupNotice = document.getElementById("dupNotice");
   var dupNoticeText = document.getElementById("dupNoticeText");
+  var barcodeBadge = document.getElementById("barcodeBadge");
+  var barcodeBadgeText = document.getElementById("barcodeBadgeText");
+  var pendingBarcode = null;
 
   function checkDuplicateLive(){
-    var idx = findMatchIndex(nameInput.value);
+    var idx = findMatchIndex(nameInput.value, pendingBarcode);
     if(idx !== -1){
       dupNotice.style.display = "block";
       dupNoticeText.textContent = "Já tem " + items[idx].qty + " unidade(s) na lista. Informe quantas você está adicionando agora — se não mudar, considera 1.";
@@ -801,7 +883,18 @@
 
   function openConfirm(name, price, weight, opts){
     opts = opts || {};
+    pendingBarcode = opts.barcode || null;
     confirmTitle.textContent = opts.manual ? "Adicionar produto manualmente" : "Confirme os dados lidos";
+
+    if(pendingBarcode){
+      barcodeBadge.style.display = "flex";
+      barcodeBadgeText.textContent = opts.priceFromBarcode
+        ? "código de barras lido — preço confirmado pelo código"
+        : "código de barras lido: " + pendingBarcode;
+    } else {
+      barcodeBadge.style.display = "none";
+    }
+
     nameInput.value = name || "";
     priceInput.value = (price !== null && price !== undefined) ? price.toFixed(2) : "";
     weightInput.value = weight || "";
@@ -819,6 +912,7 @@
   document.getElementById("btnCancel").addEventListener("click", function(){
     closeConfirm();
     preview.style.display = "none";
+    pendingBarcode = null;
   });
 
   document.getElementById("btnAdd").addEventListener("click", function(){
@@ -834,22 +928,25 @@
     }
     if(isNaN(qty) || qty < 1) qty = 1;
 
-    var matchIdx = findMatchIndex(name);
+    var matchIdx = findMatchIndex(name, pendingBarcode);
     if(matchIdx !== -1){
       items[matchIdx].qty += qty;
       items[matchIdx].price = price;
       if(weight) items[matchIdx].weight = weight;
+      if(pendingBarcode) items[matchIdx].barcode = pendingBarcode;
     } else {
-      items.push({ id: Date.now() + Math.random(), name: name, price: price, weight: weight, qty: qty });
+      items.push({ id: Date.now() + Math.random(), name: name, price: price, weight: weight, qty: qty, barcode: pendingBarcode });
     }
     renderList();
     closeConfirm();
     preview.style.display = "none";
+    pendingBarcode = null;
   });
 
   document.getElementById("btnManual").addEventListener("click", function(){
     closeCamera();
     preview.style.display = "none";
+    pendingBarcode = null;
     openConfirm("", null, "", {manual:true});
   });
 
@@ -886,7 +983,7 @@
 
       var metaParts = [formatBRL(item.price) + ' × ' + item.qty];
       if(item.weight) metaParts.push(item.weight);
-      var meta = metaParts.join(' · ');
+      var meta = metaParts.join(' · ') + (item.barcode ? ' · 📦' : '');
 
       var li = document.createElement("li");
       li.className = "item";
