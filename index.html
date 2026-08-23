@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
-<title>Confere aí — calculadora de compras</title>
+<title>Everton — calculadora inteligente</title>
 
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2E6A45">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Confere Aí">
+<meta name="apple-mobile-web-app-title" content="Everton">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 
@@ -77,7 +77,7 @@
   #cameraStage{
     position:relative;
     width:100%;
-    aspect-ratio:4/3;
+    aspect-ratio:3/4;
     background:#0C0C0B;
     border-radius:12px;
     overflow:hidden;
@@ -91,7 +91,7 @@
   }
   #cameraGuide{
     position:absolute;
-    left:8%; right:8%; top:32%; bottom:32%;
+    left:4%; right:4%; top:4%; bottom:14%;
     border:2px dashed rgba(255,255,255,0.65);
     border-radius:10px;
     pointer-events:none;
@@ -429,8 +429,8 @@
 <div class="app">
 
   <header>
-    <h1>confere<span>aí</span></h1>
-    <p>soma no carrinho</p>
+    <h1><span>Everton</span></h1>
+    <p>calculadora inteligente</p>
   </header>
 
   <div class="capture-card">
@@ -438,7 +438,7 @@
     <div id="cameraStage">
       <video id="cameraVideo" autoplay playsinline muted></video>
       <div id="cameraGuide"></div>
-      <div id="cameraHint">encaixe a etiqueta de preço no quadro</div>
+      <div id="cameraHint">a foto inteira é lida — não precisa encaixar tudo certinho</div>
     </div>
 
     <button id="btnStartCamera" type="button">
@@ -557,21 +557,41 @@
   }
 
   // ---------- OCR text parsing ----------
+  var CURRENCY_RE = /(\d{1,3}(?:\.\d{3})*,\d{2})|(\d+\.\d{2})|(\d+,\d{2})/;
+
+  function firstCurrencyIn(str){
+    var m = str.match(CURRENCY_RE);
+    if(!m) return null;
+    var raw = m[0];
+    var normalized = raw.indexOf(",") !== -1 ? raw.replace(/\./g,"").replace(",", ".") : raw;
+    var num = parseFloat(normalized);
+    return (!isNaN(num) && num > 0 && num < 100000) ? num : null;
+  }
+
   function extractPrice(text){
+    var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
+
+    // Priority 1: etiquetas de balança têm uma linha "TOTAL" e o valor logo a seguir
+    // (às vezes na mesma linha, às vezes na linha/linhas seguintes, em fonte grande)
+    for(var i=0;i<lines.length;i++){
+      if(/total/i.test(lines[i])){
+        for(var j=i;j<Math.min(i+3, lines.length);j++){
+          var found = firstCurrencyIn(lines[j]);
+          if(found !== null) return found;
+        }
+      }
+    }
+
+    // Priority 2: valor perto de "R$", mas ignorando linhas de preço por kg/g/unidade
+    // (ex: "R$/kg: 56,90" não é o preço a somar, é só o preço unitário)
     var candidates = [];
-    var re = /(\d{1,3}(?:\.\d{3})*,\d{2})|(\d+\.\d{2})|(\d+,\d{2})/g;
-    var match;
-    while((match = re.exec(text)) !== null){
-      var raw = match[0];
-      var normalized = raw.indexOf(",") !== -1
-        ? raw.replace(/\./g,"").replace(",", ".")
-        : raw;
-      var num = parseFloat(normalized);
-      if(!isNaN(num) && num > 0 && num < 100000){
-        var start = Math.max(0, match.index - 4);
-        var context = text.substring(start, match.index);
-        var priority = /r\$/i.test(context) ? 0 : 1;
-        candidates.push({ value: num, priority: priority, index: match.index });
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(/\/\s*(kg|g|ml|l|un)\b/i.test(line)) continue;
+      var val = firstCurrencyIn(line);
+      if(val !== null){
+        var priority = /r\$/i.test(line) ? 0 : 1;
+        candidates.push({ value: val, priority: priority, index: i });
       }
     }
     if(candidates.length === 0) return null;
@@ -582,38 +602,53 @@
     return candidates[0].value;
   }
 
+  function normalizeWeight(num, unit){
+    num = num.replace(",", ".").replace(/\.0+$/,"");
+    unit = unit.toLowerCase();
+    if(unit === "und" || unit === "unid" || unit === "unidades") unit = "un";
+    return num + unit;
+  }
+
   function extractWeight(text){
-    // Matches package/weight descriptors: 500g, 1kg, 350 ml, 1L, 12un, 2 unidades...
-    var re = /(\d+(?:[.,]\d+)?)\s?(kg|g|ml|l|un|und|unid|unidades)\b/gi;
-    var match;
-    var best = null;
-    while((match = re.exec(text)) !== null){
-      var num = match[1].replace(",", ".");
-      var unit = match[2].toLowerCase();
-      if(unit === "und" || unit === "unid" || unit === "unidades") unit = "un";
-      var candidate = num.replace(/\.0+$/,"") + unit;
-      if(!best){ best = candidate; }
+    var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
+    var weightRe = /(\d+(?:[.,]\d+)?)\s?(kg|g|ml|l|un|und|unid|unidades)\b/i;
+
+    // Priority 1: linha "PESO" (peso líquido do produto), nunca "TARA" (peso da embalagem)
+    // nem "R$/kg" (que é preço, não peso)
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(/peso/i.test(line) && !/tara/i.test(line) && !/r\$/i.test(line)){
+        var m = line.match(weightRe);
+        if(m) return normalizeWeight(m[1], m[2]);
+      }
     }
-    return best;
+
+    // Priority 2: qualquer peso/quantidade que não esteja numa linha de TARA ou de preço por kg
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(/tara/i.test(line)) continue;
+      if(/r\$/i.test(line)) continue;
+      var m2 = line.match(weightRe);
+      if(m2) return normalizeWeight(m2[1], m2[2]);
+    }
+    return null;
   }
 
   function extractName(text){
     var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
-    var best = "";
+    // Nome do produto normalmente é a primeira linha "de texto" da etiqueta
+    // (nas etiquetas de balança, é sempre a primeira linha, em destaque)
     for(var i=0;i<lines.length;i++){
       var line = lines[i];
       var letters = (line.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
       var digits = (line.match(/[0-9]/g) || []).length;
-      if(letters < 3) continue;
+      if(letters < 5) continue;
       if(letters <= digits) continue;
       if(/^r\$/i.test(line)) continue;
-      if(line.length > best.length){
-        best = line;
-      }
+      var name = line.length > 45 ? line.substring(0,45).trim() : line;
+      return name;
     }
-    if(!best) return "Produto";
-    if(best.length > 40) best = best.substring(0,40).trim();
-    return best;
+    return "Produto";
   }
 
   // ---------- camera ----------
@@ -897,4 +932,4 @@
 })();
 </script>
 </body>
-      </html>
+</html>
