@@ -456,6 +456,23 @@
     padding:4px;
   }
   .item-remove:hover{color:var(--red);}
+  .item-minus{
+    background:var(--paper);
+    border:1px solid var(--line);
+    color:var(--ink);
+    cursor:pointer;
+    font-size:0.95rem;
+    line-height:1;
+    width:26px;
+    height:26px;
+    border-radius:7px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+  }
+  .item-minus:hover{background:var(--line);}
+  .item-minus:disabled{opacity:0.35;cursor:default;}
 
   .barcode{
     height:26px;
@@ -1183,10 +1200,23 @@
           '<div class="item-meta">' + escapeHtml(meta) + '</div>' +
         '</div>' +
         '<div class="item-right">' +
+          '<button class="item-minus" title="Remover 1 unidade" data-idx="' + idx + '"' + (item.qty <= 1 ? ' disabled' : '') + '>－</button>' +
           '<div class="item-subtotal">' + formatBRL(subtotal) + '</div>' +
-          '<button class="item-remove" title="Remover" data-idx="' + idx + '">✕</button>' +
+          '<button class="item-remove" title="Remover tudo deste item" data-idx="' + idx + '">✕</button>' +
         '</div>';
       itemsList.appendChild(li);
+    });
+
+    itemsList.querySelectorAll(".item-minus").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        if(items[idx].qty > 1){
+          items[idx].qty -= 1;
+        } else {
+          items.splice(idx, 1);
+        }
+        renderList();
+      });
     });
 
     itemsList.querySelectorAll(".item-remove").forEach(function(btn){
