@@ -473,6 +473,27 @@
   }
   .item-minus:hover{background:var(--line);}
   .item-minus:disabled{opacity:0.35;cursor:default;}
+  .item-plus{
+    background:var(--paper);
+    border:1px solid var(--line);
+    color:var(--ink);
+    cursor:pointer;
+    font-size:0.95rem;
+    line-height:1;
+    width:26px;
+    height:26px;
+    border-radius:7px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+  }
+  .item-plus:hover{background:var(--line);}
+  .qty-steppers{
+    display:flex;
+    align-items:center;
+    gap:4px;
+  }
 
   .barcode{
     height:26px;
@@ -1200,7 +1221,10 @@
           '<div class="item-meta">' + escapeHtml(meta) + '</div>' +
         '</div>' +
         '<div class="item-right">' +
-          '<button class="item-minus" title="Remover 1 unidade" data-idx="' + idx + '"' + (item.qty <= 1 ? ' disabled' : '') + '>－</button>' +
+          '<div class="qty-steppers">' +
+            '<button class="item-minus" title="Remover 1 unidade" data-idx="' + idx + '"' + (item.qty <= 1 ? ' disabled' : '') + '>－</button>' +
+            '<button class="item-plus" title="Adicionar 1 unidade" data-idx="' + idx + '">＋</button>' +
+          '</div>' +
           '<div class="item-subtotal">' + formatBRL(subtotal) + '</div>' +
           '<button class="item-remove" title="Remover tudo deste item" data-idx="' + idx + '">✕</button>' +
         '</div>';
@@ -1215,6 +1239,14 @@
         } else {
           items.splice(idx, 1);
         }
+        renderList();
+      });
+    });
+
+    itemsList.querySelectorAll(".item-plus").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        items[idx].qty += 1;
         renderList();
       });
     });
