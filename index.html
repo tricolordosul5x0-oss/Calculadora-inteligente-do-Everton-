@@ -778,25 +778,53 @@
   }
 
   // ---------- barcode (código de barras) ----------
-  // Etiquetas de balança no Brasil costumam usar o prefixo "2" (uso interno/GS1 Brasil).
-  // Formato mais comum: 2 + código do produto (6 dígitos) + valor (5 dígitos, em centavos) + dígito verificador.
-  // Ex.: 2 018604 026638  →  018604 = código do produto | 02663 = R$ 26,63 | 8 = dígito verificador
-  function decodeScaleBarcode(code){
-    if(!code || !/^2\d{12}$/.test(code)){
-      return { isScale: false, plu: null, price: null };
+  // Padrão comum de balança na América Latina (confirmado em documentação de
+  // integração de PDV): código de 13 dígitos onde
+  //   dígito 1  = 1 (item pesável, dígitos 8-12 = PESO) ou 2 (item não pesável, dígitos 8-12 = PREÇO)
+  //   dígitos 2-7  = código interno do produto (PLU)
+  //   dígitos 8-12 = peso ou preço, conforme o dígito 1
+  //   dígito 13    = dígito verificador (checksum EAN-13)
+  // Ex.: 2 018604 026638 → prefixo 2 (preço) | plu 018604 | 02663 = R$ 26,63 | 8 = verificador
+
+  function isValidEAN13(code){
+    if(!/^\d{13}$/.test(code)) return false;
+    var sum = 0;
+    for(var i=0;i<12;i++){
+      var d = parseInt(code[i], 10);
+      sum += (i % 2 === 0) ? d : d * 3;
     }
-    var plu = code.substring(1, 7);        // 6 dígitos: código interno do produto
-    var valueDigits = code.substring(7, 12); // 5 dígitos: valor em centavos
-    var price = parseInt(valueDigits, 10) / 100;
-    var plausible = !isNaN(price) && price > 0 && price < 10000;
-    return { isScale: true, plu: plu, price: plausible ? price : null };
+    var check = (10 - (sum % 10)) % 10;
+    return check === parseInt(code[12], 10);
+  }
+
+  function decodeScaleBarcode(code){
+    var none = { isScale: false, plu: null, price: null, weight: null };
+    if(!code || !isValidEAN13(code)) return none; // rejeita leituras inválidas/fantasma
+
+    var prefix = code[0];
+    if(prefix !== "1" && prefix !== "2") return none;
+
+    var plu = code.substring(1, 7);
+    var valueDigits = code.substring(7, 12);
+    var valueNum = parseInt(valueDigits, 10);
+    if(isNaN(valueNum)) return none;
+
+    if(prefix === "2"){
+      var price = valueNum / 100; // centavos
+      var plausiblePrice = price > 0 && price < 10000;
+      return { isScale: true, plu: plu, price: plausiblePrice ? price : null, weight: null };
+    } else {
+      var weightKg = valueNum / 1000; // gramas -> kg
+      var plausibleWeight = weightKg > 0 && weightKg < 500;
+      return { isScale: true, plu: plu, price: null, weight: plausibleWeight ? weightKg : null };
+    }
   }
 
   function identityKeyFor(barcode){
     if(!barcode) return null;
     var info = decodeScaleBarcode(barcode);
-    // Em etiquetas de balança, o preço muda a cada pesagem, mas o código do
-    // produto (plu) continua igual — por isso comparamos só essa parte.
+    // Em etiquetas de balança, o preço/peso muda a cada pesagem, mas o código
+    // do produto (plu) continua igual — por isso comparamos só essa parte.
     return info.isScale ? ("SCALE:" + info.plu) : ("CODE:" + barcode);
   }
 
@@ -982,10 +1010,13 @@
       var name = extractName(text);
       var weight = extractWeight(text);
 
-      var scaleInfo = barcode ? decodeScaleBarcode(barcode) : { isScale:false, price:null };
-      // Se o código de barras é de balança e trouxe um preço plausível, ele é mais
+      var scaleInfo = barcode ? decodeScaleBarcode(barcode) : { isScale:false, price:null, weight:null };
+      // Se o código de barras é de balança e trouxe um valor plausível, ele é mais
       // confiável que o OCR (não erra dígito por causa de borrão/reflexo na foto).
       var price = (scaleInfo.isScale && scaleInfo.price !== null) ? scaleInfo.price : ocrPrice;
+      if(scaleInfo.isScale && scaleInfo.weight !== null){
+        weight = scaleInfo.weight.toFixed(3).replace(/0+$/,"").replace(/\.$/,"") + "kg";
+      }
 
       ocrStatus.style.display = "none";
       openConfirm(name, price, weight, {
