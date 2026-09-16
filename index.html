@@ -296,6 +296,45 @@
     margin-bottom:12px;
   }
 
+  .chip-row{
+    display:none;
+    margin-bottom:14px;
+  }
+  .chip-row-label{
+    font-size:0.68rem;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--ink-soft);
+    font-weight:600;
+    margin-bottom:6px;
+  }
+  .chip-scroll{
+    display:flex;
+    gap:7px;
+    overflow-x:auto;
+    padding-bottom:2px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .chip-scroll::-webkit-scrollbar{display:none;}
+  .chip{
+    flex-shrink:0;
+    background:var(--paper);
+    border:1px solid var(--line);
+    color:var(--ink);
+    border-radius:20px;
+    padding:8px 14px;
+    font-size:0.82rem;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:600;
+    white-space:nowrap;
+    cursor:pointer;
+    max-width:220px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .chip:active{background:var(--line);}
+  .chip.chip-name{font-family:'Inter',sans-serif;font-weight:500;}
+
   .debug-toggle{
     display:block;
     text-align:center;
@@ -590,6 +629,11 @@
       <input type="text" id="productName" placeholder="Nome do produto">
     </div>
 
+    <div class="chip-row" id="nameChipsRow">
+      <div class="chip-row-label">textos encontrados na foto (toque pra usar)</div>
+      <div class="chip-scroll" id="nameChipsScroll"></div>
+    </div>
+
     <div class="row-2">
       <div class="field price">
         <label for="productPrice">Preço (R$)</label>
@@ -599,6 +643,11 @@
         <label for="productWeight">Peso / embalagem</label>
         <input type="text" id="productWeight" placeholder="ex: 500g">
       </div>
+    </div>
+
+    <div class="chip-row" id="priceChipsRow">
+      <div class="chip-row-label">números encontrados na foto (toque pra usar)</div>
+      <div class="chip-scroll" id="priceChipsScroll"></div>
     </div>
 
     <div class="field qty">
@@ -813,6 +862,51 @@
       return name;
     }
     return "Produto";
+  }
+
+  // Todos os números que parecem preço (não só "o" melhor palpite) — pra
+  // deixar o usuário escolher com um toque quando o palpite automático erra.
+  function extractAllPrices(text){
+    var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
+    var seen = {};
+    var results = [];
+    for(var i=0;i<lines.length;i++){
+      var re = /(\d{1,3}(?:\.\d{3})*\s?,\s?\d{2})(?![A-Za-z])|(\d+\.\d{2})(?![A-Za-z])|(\d+\s?,\s?\d{2})(?![A-Za-z])/g;
+      var m;
+      while((m = re.exec(lines[i])) !== null){
+        var raw = m[0].replace(/\s+/g, "");
+        var normalized = raw.indexOf(",") !== -1 ? raw.replace(/\./g,"").replace(",", ".") : raw;
+        var num = parseFloat(normalized);
+        if(!isNaN(num) && num > 0 && num < 100000 && !seen[num.toFixed(2)]){
+          seen[num.toFixed(2)] = true;
+          results.push(num);
+          if(results.length >= 10) return results;
+        }
+      }
+    }
+    return results;
+  }
+
+  // Todas as linhas de texto que parecem candidatas a nome de produto.
+  function extractAllNameCandidates(text){
+    var lines = text.split("\n").map(function(l){return l.trim();}).filter(Boolean);
+    var seen = {};
+    var results = [];
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      var letters = (line.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+      var digits = (line.match(/[0-9]/g) || []).length;
+      if(letters < 3) continue;
+      if(letters <= digits) continue;
+      var cleaned = line.length > 45 ? line.substring(0,45).trim() : line;
+      var key = normalize(cleaned);
+      if(key && !seen[key]){
+        seen[key] = true;
+        results.push(cleaned);
+        if(results.length >= 8) return results;
+      }
+    }
+    return results;
   }
 
   // ---------- barcode (código de barras) ----------
@@ -1079,12 +1173,58 @@
   var barcodeBadgeText = document.getElementById("barcodeBadgeText");
   var debugPanel = document.getElementById("debugPanel");
   var btnToggleDebug = document.getElementById("btnToggleDebug");
+  var nameChipsRow = document.getElementById("nameChipsRow");
+  var nameChipsScroll = document.getElementById("nameChipsScroll");
+  var priceChipsRow = document.getElementById("priceChipsRow");
+  var priceChipsScroll = document.getElementById("priceChipsScroll");
   var pendingBarcode = null;
   var pendingRawText = "";
 
   btnToggleDebug.addEventListener("click", function(){
     debugPanel.style.display = (debugPanel.style.display === "block") ? "none" : "block";
   });
+
+  function renderNameChips(text){
+    var candidates = text ? extractAllNameCandidates(text) : [];
+    nameChipsScroll.innerHTML = "";
+    if(candidates.length === 0){
+      nameChipsRow.style.display = "none";
+      return;
+    }
+    candidates.forEach(function(candidate){
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chip chip-name";
+      btn.textContent = candidate;
+      btn.addEventListener("click", function(){
+        nameInput.value = candidate;
+        checkDuplicateLive();
+      });
+      nameChipsScroll.appendChild(btn);
+    });
+    nameChipsRow.style.display = "block";
+  }
+
+  function renderPriceChips(text){
+    var candidates = text ? extractAllPrices(text) : [];
+    priceChipsScroll.innerHTML = "";
+    if(candidates.length === 0){
+      priceChipsRow.style.display = "none";
+      return;
+    }
+    candidates.forEach(function(value){
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chip";
+      btn.textContent = formatBRL(value);
+      btn.addEventListener("click", function(){
+        priceInput.value = value.toFixed(2);
+        priceInput.style.outline = "";
+      });
+      priceChipsScroll.appendChild(btn);
+    });
+    priceChipsRow.style.display = "block";
+  }
 
   function checkDuplicateLive(){
     var idx = findMatchIndex(nameInput.value, pendingBarcode);
@@ -1115,6 +1255,14 @@
     debugPanel.innerHTML =
       "<b>código de barras:</b> " + (pendingBarcode ? escapeHtml(pendingBarcode) : "(nenhum encontrado)") +
       "\n\n<b>texto lido (OCR):</b>\n" + (pendingRawText ? escapeHtml(pendingRawText) : "(vazio)");
+
+    if(opts.manual){
+      nameChipsRow.style.display = "none";
+      priceChipsRow.style.display = "none";
+    } else {
+      renderNameChips(pendingRawText);
+      renderPriceChips(pendingRawText);
+    }
 
     // Se a leitura claramente falhou (sem preço, ou nome genérico), já abre o
     // diagnóstico sozinho — evita o usuário ter que lembrar de tocar no link.
