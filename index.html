@@ -572,6 +572,22 @@
     font-family:'JetBrains Mono',monospace;
   }
 
+  .clear-list-btn{
+    display:block;
+    width:100%;
+    margin-top:14px;
+    background:none;
+    border:1px solid var(--line);
+    color:var(--ink-soft);
+    border-radius:10px;
+    padding:11px;
+    font-size:0.78rem;
+    font-family:'JetBrains Mono',monospace;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .clear-list-btn:hover{border-color:var(--red);color:var(--red);}
+
   input[type="file"]{display:none;}
 </style>
 </head>
@@ -686,6 +702,7 @@
     </div>
   </div>
   <div class="item-count" id="itemCountBottom"></div>
+  <button class="clear-list-btn" id="btnClearList" style="display:none;" type="button">🗑 limpar lista (nova compra)</button>
 
 </div>
 
@@ -697,6 +714,27 @@
 
   // ---------- state ----------
   var items = []; // { id, name, price, weight, qty }
+  var STORAGE_KEY = "everton_calc_items_v1";
+
+  function saveItems(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch(e){
+      // armazenamento indisponível (ex: modo anônimo) — segue só na memória
+    }
+  }
+
+  function loadItems(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(Array.isArray(parsed)) items = parsed;
+      }
+    } catch(e){
+      items = [];
+    }
+  }
   var stream = null;
   var facingMode = "environment";
   var lastCanvas = null;
@@ -1334,8 +1372,18 @@
   var totalValue = document.getElementById("totalValue");
   var itemCountTop = document.getElementById("itemCountTop");
   var itemCountBottom = document.getElementById("itemCountBottom");
+  var btnClearList = document.getElementById("btnClearList");
+
+  btnClearList.addEventListener("click", function(){
+    if(items.length === 0) return;
+    if(confirm("Limpar toda a lista? Isso apaga " + items.length + " produto(s) — não dá pra desfazer.")){
+      items = [];
+      renderList();
+    }
+  });
 
   function renderList(){
+    saveItems();
     itemsList.innerHTML = "";
     if(items.length === 0){
       emptyState.style.display = "block";
@@ -1343,6 +1391,7 @@
       totalRow.style.display = "none";
       itemCountTop.textContent = "";
       itemCountBottom.textContent = "";
+      btnClearList.style.display = "none";
       return;
     }
     emptyState.style.display = "none";
@@ -1410,6 +1459,7 @@
     totalValue.textContent = formatBRL(total);
     itemCountTop.textContent = items.length + " produto" + (items.length !== 1 ? "s" : "");
     itemCountBottom.textContent = totalUnits + " unidade" + (totalUnits !== 1 ? "s" : "") + " no carrinho";
+    btnClearList.style.display = "block";
   }
 
   function escapeHtml(str){
@@ -1418,9 +1468,8 @@
     return div.innerHTML;
   }
 
+  loadItems();
   renderList();
-
-  // ---------- PWA: register service worker (harmless inside the native app too) ----------
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
       navigator.serviceWorker.register("sw.js").catch(function () {});
